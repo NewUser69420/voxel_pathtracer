@@ -4,7 +4,7 @@ use bevy::{
     window::WindowMode,
 };
 use compute::RayTracerPlugin;
-use entity_spawner::spawn_point_light;
+use entity_spawner::spawn_point_lights;
 use generate_octree::update_octree;
 use light_controller::animate_lights;
 use player_controller::{
@@ -47,7 +47,7 @@ fn main() {
                 pre_compute::setup,
                 generate_octree::setup,
                 world_generator::setup,
-                spawn_point_light,
+                spawn_point_lights,
                 initial_grab_cursor,
                 setup_shader_screen,
                 apply_deferred,

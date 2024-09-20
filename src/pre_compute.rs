@@ -33,12 +33,8 @@ pub fn update_shader_screen(
     let player_rotation = real_player.rotation.to_euler(EulerRot::ZXY);
     let cam_rotation = real_cam.1.rotation.to_euler(EulerRot::ZXY);
 
-    shader_screen.pos = [
-        real_cam.0.translation().x,
-        real_cam.0.translation().y,
-        real_cam.0.translation().z,
-    ];
-    shader_screen.rot = [player_rotation.0, cam_rotation.1, player_rotation.2];
+    shader_screen.pos = real_cam.0.translation();
+    shader_screen.rot = Vec3::new(player_rotation.0, cam_rotation.1, player_rotation.2);
 
     let elapsed = now.elapsed().as_millis();
     if elapsed > 1 {

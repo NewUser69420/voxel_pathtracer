@@ -14,12 +14,12 @@ struct Leaf {
 
 struct OctreeVoxel {
     id: u32,
-    color: array<f32, 3>,
+    color: vec3<f32>,
 }
 
 struct ShaderScreen {
-    pos: array<f32, 3>,
-    rot: array<f32, 3>,
+    pos: vec3<f32>,
+    rot: vec3<f32>,
     width: u32,
     height: u32,
     fov: u32,
@@ -43,6 +43,7 @@ struct Emitter {
     range: f32,
     falloff: f32,
     fov: u32,
+    color: vec3<f32>,
 }
 
 @group(0) @binding(0) var<storage, read> octree: Octree;
@@ -123,11 +124,13 @@ fn trace_ray(ray: Ray) -> vec4<f32> {
             exit += 1u;
         }
         if node.voxel.id != 0 {
-            var color = array<f32, 3>(node.voxel.color[0], node.voxel.color[1], node.voxel.color[2]);
+            var color = vec3<f32>(node.voxel.color[0], node.voxel.color[1], node.voxel.color[2]);
             var shadow = 0.0;
+            var intensity = 0.0;
             //do light : shadow
             for (var i = 0u; i < emitter_num; i++ ) {
                 let light = emitters[i];
+
                 let dir = light.position - photon;
                 let ray = Ray(photon, dir);
 
@@ -140,8 +143,11 @@ fn trace_ray(ray: Ray) -> vec4<f32> {
                     0.0, 1.0,
                     round(dist_to_light),
                     ) * light.falloff;
-                    shadow = max(shadow, (1.0 - range_mod) * light.strength);
+                    intensity = (1.0 - range_mod) * light.strength;
+                    shadow = max(shadow, intensity);
                 }
+
+                color *= (light.color - vec3<f32>(1.0, 1.0, 1.0)) * intensity + vec3<f32>(1.0, 1.0, 1.0);
             }
 
             for (var j = 0; j < 3; j++) {

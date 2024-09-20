@@ -55,6 +55,7 @@ pub fn spawn_player(mut commands: Commands, render_texture: Res<RayTracerTexture
             range: 30,
             falloff: 0.8,
             fov: 0,
+            color: Vec3::new(1.0, 1.0, 1.0),
         },
         Player,
     );
@@ -86,7 +87,7 @@ pub fn spawn_player(mut commands: Commands, render_texture: Res<RayTracerTexture
         SpriteBundle {
             transform: Transform::from_xyz(0.0, 0.0, 1.0),
             sprite: Sprite {
-                custom_size: Some(Vec2::new(1920 as f32, 1080 as f32)),
+                custom_size: Some(Vec2::new(RESWIDTH as f32, RESHIGHT as f32)),
                 ..Default::default()
             },
             texture: render_texture.texture.clone(),

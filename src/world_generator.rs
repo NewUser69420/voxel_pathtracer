@@ -53,11 +53,11 @@ impl StorageVoxel {
     pub fn into_normal(self: &Self) -> OctreeVoxel {
         OctreeVoxel {
             id: self.id as u32,
-            color: [
+            color: Vec3::new(
                 self.color[0] as f32 / 100.0,
                 self.color[1] as f32 / 100.0,
                 self.color[2] as f32 / 100.0,
-            ],
+            ),
         }
     }
 }

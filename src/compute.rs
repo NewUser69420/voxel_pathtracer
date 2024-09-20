@@ -65,8 +65,8 @@ struct SerialiseTrigger(Arc<Mutex<bool>>);
 
 #[derive(Resource, Default, Clone, Copy, ShaderType)]
 pub struct ShaderScreen {
-    pub pos: [f32; 3],
-    pub rot: [f32; 3],
+    pub pos: Vec3,
+    pub rot: Vec3,
     pub width: u32,
     pub height: u32,
     pub fov: u32,
@@ -81,6 +81,7 @@ pub struct ShaderEmitter {
     pub range: f32,
     pub falloff: f32,
     pub fov: u32,
+    pub color: Vec3,
 }
 impl ShaderEmitter {
     fn from_vl_emitter(value: VoxelLightEmitter, position: Vec3, rotation: Vec3) -> Self {
@@ -92,6 +93,7 @@ impl ShaderEmitter {
             range: value.range as f32,
             falloff: value.falloff,
             fov: value.fov,
+            color: value.color,
         }
     }
 }
