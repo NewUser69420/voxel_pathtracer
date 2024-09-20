@@ -45,14 +45,16 @@ pub struct InputState {
 pub fn spawn_player(mut commands: Commands, render_texture: Res<RayTracerTexture>) {
     let player = (
         SpatialBundle::from_transform(Transform::from_xyz(
-            W_WIDTH as f32,
-            W_HEIGHT as f32,
-            W_WIDTH as f32,
+            W_WIDTH as f32 + 5.0,
+            W_HEIGHT as f32 + 5.0,
+            W_WIDTH as f32 + 5.0,
         )),
         VoxelLightEmitter {
-            strenght: 0.4,
-            range: 20,
-            falloff: 0.5,
+            radius: 16.0,
+            strenght: 1.5,
+            range: 30,
+            falloff: 0.8,
+            fov: 0,
         },
         Player,
     );

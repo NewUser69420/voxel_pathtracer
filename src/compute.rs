@@ -75,17 +75,23 @@ pub struct ShaderScreen {
 #[derive(Default, Clone, ShaderType)]
 pub struct ShaderEmitter {
     pub position: Vec3,
+    pub rotation: Vec3,
+    pub radius: f32,
     pub strength: f32,
     pub range: f32,
     pub falloff: f32,
+    pub fov: u32,
 }
 impl ShaderEmitter {
-    fn from_vl_emitter(value: VoxelLightEmitter, position: Vec3) -> Self {
+    fn from_vl_emitter(value: VoxelLightEmitter, position: Vec3, rotation: Vec3) -> Self {
         ShaderEmitter {
             position: position,
+            rotation: rotation,
+            radius: value.radius,
             strength: value.strenght,
             range: value.range as f32,
             falloff: value.falloff,
+            fov: value.fov,
         }
     }
 }
@@ -150,6 +156,7 @@ fn extract_resources(
     mut octree: ResMut<ComputeOctree>,
     mut screen: ResMut<ShaderScreen>,
     mut emitters: ResMut<Emitters>,
+    // render_state: Res<State<RenderingState>>,
 ) {
     let now = Instant::now();
 
@@ -172,8 +179,18 @@ fn extract_resources(
     emitters.0 = world
         .query::<(&VoxelLightEmitter, &Transform)>()
         .iter(&mut world)
-        .map(|v| ShaderEmitter::from_vl_emitter(v.0.clone(), v.1.translation))
+        .map(|v| {
+            ShaderEmitter::from_vl_emitter(
+                v.0.clone(),
+                v.1.translation,
+                v.1.rotation.to_euler(bevy::math::EulerRot::XYZ).into(),
+            )
+        })
         .collect();
+
+    // world
+    //     .resource_mut::<NextState<RenderingState>>()
+    //     .set(*render_state.get());
 
     let elapsed = now.elapsed().as_millis();
     if elapsed > 0 {
@@ -215,7 +232,7 @@ fn update_buffers(
                 render_queue.clone(),
                 &raytracer_buffer.leaves,
                 Arc::clone(&leaf_data.0),
-            )
+            );
         }
         Err(_) => {}
     }
@@ -306,7 +323,7 @@ impl FromWorld for RayTracePipeLine {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -368,14 +385,6 @@ impl FromWorld for RayTracePipeLine {
             .resource::<AssetServer>()
             .load("shaders/octree_raymarcher.wgsl");
         let pipeline_cache = world.resource::<PipelineCache>();
-        // let init_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-        //     label: None,
-        //     layout: vec![buffer_bind_group_layout.clone()],
-        //     push_constant_ranges: Vec::new(),
-        //     shader: shader.clone(),
-        //     shader_defs: vec![],
-        //     entry_point: Cow::from("init"),
-        // });
         let update_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
             layout: vec![buffer_bind_group_layout.clone()],
@@ -387,7 +396,6 @@ impl FromWorld for RayTracePipeLine {
 
         RayTracePipeLine {
             texture_bind_group_layout: buffer_bind_group_layout,
-            //init_pipeline,
             update_pipeline,
         }
     }

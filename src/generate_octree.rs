@@ -4,11 +4,10 @@ use std::{
     time::Instant,
 };
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::prelude::*;
 
 use crate::{
     compute::ComputeOctree,
-    entity_spawner::VoxelEntity,
     octree::{Octree, _get_lod},
     player_controller::{PCamera, Player},
     world_generator::{VoxWorld, C_SIZE, RENDERDIST, W_HEIGHT, W_WIDTH},
@@ -30,7 +29,6 @@ pub fn update_octree(
     world: Res<VoxWorld>,
     shader_octree: Res<ComputeOctree>,
     cam_query: Query<&GlobalTransform, (With<PCamera>, Without<Player>)>,
-    vox_entity_query: Query<(&Transform, &VoxelEntity)>,
     trigger: Res<Trigger>,
 ) {
     let now = Instant::now();
@@ -43,20 +41,20 @@ pub fn update_octree(
             if *lock {
                 *lock = false;
 
-                let mut vox_entity_data = HashMap::new();
-                for (t, entity_vox) in vox_entity_query.iter() {
-                    let entity_pos = t.translation;
-                    for voxel in entity_vox.voxels.iter() {
-                        if cam_pos.distance(entity_pos) < RENDERDIST as f32 {
-                            let pos = [
-                                t.translation.x as u32 + voxel.0[0],
-                                t.translation.y as u32 + voxel.0[1],
-                                t.translation.z as u32 + voxel.0[2],
-                            ];
-                            vox_entity_data.insert(pos, voxel.1.into_normal());
-                        }
-                    }
-                }
+                // let mut vox_entity_data = HashMap::new();
+                // for (t, entity_vox) in vox_entity_query.iter() {
+                //     let entity_pos = t.translation;
+                //     for voxel in entity_vox.voxels.iter() {
+                //         if cam_pos.distance(entity_pos) < RENDERDIST as f32 {
+                //             let pos = [
+                //                 t.translation.x as u32 + voxel.0[0],
+                //                 t.translation.y as u32 + voxel.0[1],
+                //                 t.translation.z as u32 + voxel.0[2],
+                //             ];
+                //             vox_entity_data.insert(pos, voxel.1.into_normal());
+                //         }
+                //     }
+                // }
 
                 let trig_clone = Arc::clone(&trigger.0);
                 let world_clone = Arc::clone(&world.world);
@@ -212,18 +210,18 @@ pub fn update_octree(
                         }
                     }
 
-                    for (vox_pos, vox) in vox_entity_data.iter() {
-                        let lod = _get_lod(
-                            Vec3::new(vox_pos[0] as f32, vox_pos[1] as f32, vox_pos[2] as f32),
-                            cam_pos,
-                        );
+                    // for (vox_pos, vox) in vox_entity_data.iter() {
+                    //     let lod = _get_lod(
+                    //         Vec3::new(vox_pos[0] as f32, vox_pos[1] as f32, vox_pos[2] as f32),
+                    //         cam_pos,
+                    //     );
 
-                        new_octree.insert(
-                            [vox_pos[0] as u32, vox_pos[1] as u32, vox_pos[2] as u32],
-                            *vox,
-                            lod,
-                        );
-                    }
+                    //     new_octree.insert(
+                    //         [vox_pos[0] as u32, vox_pos[1] as u32, vox_pos[2] as u32],
+                    //         *vox,
+                    //         lod,
+                    //     );
+                    // }
 
                     *trig_clone.lock().unwrap() = true;
                     *octree_clone.lock().unwrap() = Some(new_octree);
