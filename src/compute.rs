@@ -25,7 +25,7 @@ use bevy::{
             PipelineCache, ShaderType,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
-        texture::Image,
+        texture::{GpuImage, Image},
         Render, RenderApp, RenderSet,
     },
 };
@@ -132,14 +132,14 @@ impl Plugin for RayTracerPlugin {
                     .chain(),
             );
 
-        let mut render_graph = render_app.world.resource_mut::<RenderGraph>();
+        let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
         render_graph.add_node(RayTraceLabel, RayTraceNode::default());
         render_graph.add_node_edge(RayTraceLabel, bevy::render::graph::CameraDriverLabel);
     }
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-        let render_device = render_app.world.resource::<RenderDevice>().clone();
+        let render_device = render_app.world().resource::<RenderDevice>().clone();
         render_app
             .init_resource::<RayTracePipeLine>()
             .insert_resource(RayTracerBuffers {
@@ -264,13 +264,15 @@ fn prepare_bind_group(
     pipeline: Res<RayTracePipeLine>,
     render_device: Res<RenderDevice>,
     // render_queue: Res<RenderQueue>,
-    gpu_images: ResMut<RenderAssets<Image>>,
+    gpu_images: ResMut<RenderAssets<GpuImage>>,
     raytracer_buffer: Res<RayTracerBuffers>,
     raytracer_texture: Res<RayTracerTexture>,
     // render_image: Res<WorldView>,
 ) {
     let now = Instant::now();
-    let gpu_view = gpu_images.get(raytracer_texture.texture.clone()).unwrap();
+    let gpu_view = gpu_images
+        .get(&mut raytracer_texture.texture.clone())
+        .unwrap();
     match gpu_view.texture_format {
         wgpu::TextureFormat::Rgba8Unorm => {
             let bind_group = render_device.create_bind_group(

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = "0.13.0"
-wgpu = "0.19.3"
+bevy = "0.14.2"
+wgpu = "0.20.1"
 dot_vox = "5.1.1"
 crossbeam-channel = "0.5.11"
 noise = "0.9.0"
