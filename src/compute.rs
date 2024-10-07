@@ -1,5 +1,5 @@
 use crate::{
-    entity_spawner::VoxelLightEmitter,
+    light_controller::VoxelLightEmitter,
     octree::{Octree, ShaderOctree},
     pre_compute::{RESHIGHT, RESWIDTH},
     world_generator,
@@ -120,7 +120,6 @@ impl Plugin for RayTracerPlugin {
             .init_resource::<SerialiseTrigger>()
             .init_resource::<ShaderScreen>()
             .init_resource::<Emitters>()
-            // .add_systems(ExtractSchedule, get_info.run_if(check_info))
             .add_systems(ExtractSchedule, extract_resources)
             .add_systems(
                 Render,
@@ -158,7 +157,6 @@ fn extract_resources(
     mut octree: ResMut<ComputeOctree>,
     mut screen: ResMut<ShaderScreen>,
     mut emitters: ResMut<Emitters>,
-    // render_state: Res<State<RenderingState>>,
 ) {
     let now = Instant::now();
 
@@ -189,10 +187,6 @@ fn extract_resources(
             )
         })
         .collect();
-
-    // world
-    //     .resource_mut::<NextState<RenderingState>>()
-    //     .set(*render_state.get());
 
     let elapsed = now.elapsed().as_millis();
     if elapsed > 0 {
@@ -263,11 +257,9 @@ fn prepare_bind_group(
     mut commands: Commands,
     pipeline: Res<RayTracePipeLine>,
     render_device: Res<RenderDevice>,
-    // render_queue: Res<RenderQueue>,
     gpu_images: ResMut<RenderAssets<GpuImage>>,
     raytracer_buffer: Res<RayTracerBuffers>,
     raytracer_texture: Res<RayTracerTexture>,
-    // render_image: Res<WorldView>,
 ) {
     let now = Instant::now();
     let gpu_view = gpu_images
@@ -387,7 +379,7 @@ impl FromWorld for RayTracePipeLine {
         );
         let shader = world
             .resource::<AssetServer>()
-            .load("shaders/octree_raymarcher.wgsl");
+            .load("shaders/raymarcher.wgsl");
         let pipeline_cache = world.resource::<PipelineCache>();
         let update_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
@@ -515,7 +507,7 @@ fn update_octree_buffer(render_queue: RenderQueue, buffer: &Buffer, octree: &Sha
 fn setup_leaves_buffer(render_device: RenderDevice) -> Buffer {
     render_device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 300000000,
+        size: 2147483648,
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST,
@@ -583,7 +575,7 @@ fn setup_view_distance_buffer(render_device: RenderDevice) -> Buffer {
 fn setup_emitters_buffer(render_device: RenderDevice) -> Buffer {
     render_device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 300000000,
+        size: 2147483648,
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST,

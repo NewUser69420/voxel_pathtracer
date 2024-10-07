@@ -10,5 +10,5 @@ dot_vox = "5.1.1"
 crossbeam-channel = "0.5.11"
 noise = "0.9.0"
 rand = "0.8.5"
-serde = "1.0.0"
+serde = "1.0.210"
 

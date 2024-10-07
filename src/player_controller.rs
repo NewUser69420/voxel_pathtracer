@@ -7,9 +7,9 @@ use bevy::{
 
 use crate::{
     compute::RayTracerTexture,
-    entity_spawner::VoxelLightEmitter,
+    light_controller::{VariableLight, VoxelLightEmitter},
     pre_compute::{FOV, RESHIGHT, RESWIDTH},
-    world_generator::{METER, RENDERDIST, W_HEIGHT, W_WIDTH},
+    world_generator::{VoxWorld, METER},
 };
 
 #[derive(Component)]
@@ -42,21 +42,26 @@ pub struct InputState {
     yaw: f32,
 }
 
-pub fn spawn_player(mut commands: Commands, render_texture: Res<RayTracerTexture>) {
+pub fn spawn_player(
+    mut commands: Commands,
+    render_texture: Res<RayTracerTexture>,
+    vox_world: Res<VoxWorld>,
+) {
     let player = (
         SpatialBundle::from_transform(Transform::from_xyz(
-            W_WIDTH as f32 + 5.0,
-            W_HEIGHT as f32 + 5.0,
-            W_WIDTH as f32 + 5.0,
+            vox_world.root[0] as f32 + 256.0,
+            vox_world.root[1] as f32 + 96.0,
+            vox_world.root[2] as f32 + 256.0,
         )),
         VoxelLightEmitter {
-            radius: 16.0,
-            strenght: 1.5,
-            range: 30,
+            radius: 1.0,
+            strenght: 0.9,
+            range: 120,
             falloff: 0.8,
             fov: 0,
-            color: Vec3::new(1.0, 1.0, 1.0),
+            color: Vec3::new(1.0, 0.9, 0.8),
         },
+        VariableLight((0.5, 0.9, 0.7)),
         Player,
     );
     let tracer_cam = (
@@ -155,30 +160,11 @@ pub fn move_player(
 
             velocity = velocity.normalize_or_zero();
 
-            if out_of_bounds_rule(&mut transform.translation, velocity) {
-                transform.translation.x +=
-                    velocity.x * time.delta_seconds() * settings.freecam_speed;
-                transform.translation.y +=
-                    velocity.y * time.delta_seconds() * settings.freecam_speed;
-                transform.translation.z +=
-                    velocity.z * time.delta_seconds() * settings.freecam_speed;
-            }
+            transform.translation.x += velocity.x * time.delta_seconds() * settings.freecam_speed;
+            transform.translation.y += velocity.y * time.delta_seconds() * settings.freecam_speed;
+            transform.translation.z += velocity.z * time.delta_seconds() * settings.freecam_speed;
         }
     }
-}
-
-fn out_of_bounds_rule(pos: &mut Vec3, dir: Vec3) -> bool {
-    let c = Vec3 {
-        x: W_WIDTH as f32,
-        y: W_HEIGHT as f32,
-        z: W_WIDTH as f32,
-    };
-
-    if pos.distance(c) > RENDERDIST as f32 && pos.distance(c) < c.distance(*pos + dir) {
-        return false;
-    }
-
-    true
 }
 
 pub fn player_look(

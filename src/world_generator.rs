@@ -6,21 +6,23 @@ use std::{
 
 use bevy::{prelude::*, utils::HashMap};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use dot_vox::*;
+use dot_vox::{load, Model, Rotation, SceneNode, Voxel};
 use serde::{Deserialize, Serialize};
 
-use crate::octree::OctreeVoxel;
+use crate::{entity_controller::MovingEntity, octree::OctreeVoxel};
 
 pub const METER: u32 = 8;
-pub const VIEWDIST: u32 = 500;
-pub const RENDERDIST: u32 = 500;
-pub const W_WIDTH: u32 = 2048;
-pub const W_HEIGHT: u32 = 2048;
+pub const VIEWDIST: u32 = 1024;
+pub const RENDERDIST: u32 = 1024;
+pub const ENTITYDRAW: u32 = 512;
+pub const W_WIDTH: u32 = 4096;
+pub const W_HEIGHT: u32 = 4096;
 pub const C_SIZE: u32 = 64;
 
 #[derive(Resource)]
 pub struct VoxWorld {
     pub world: Arc<RwLock<Vec<Vec<Vec<Chunk>>>>>,
+    pub root: [u32; 3],
 }
 impl Default for VoxWorld {
     fn default() -> Self {
@@ -35,6 +37,7 @@ impl Default for VoxWorld {
                 ];
                 ((W_WIDTH * 2) / C_SIZE) as usize
             ])),
+            root: [W_WIDTH - (W_WIDTH / 2); 3],
         }
     }
 }
@@ -80,6 +83,13 @@ impl Default for WorldData {
     }
 }
 
+#[derive(Component, Clone)]
+pub struct VoxelEntity {
+    pub transform: Transform,
+    pub voxels: Vec<Voxel>,
+    pub palette: Vec<dot_vox::Color>,
+}
+
 #[derive(Resource)]
 pub struct Channel {
     tx: Sender<WorldData>,
@@ -92,135 +102,44 @@ pub fn setup(mut commands: Commands) {
     commands.insert_resource(VoxWorld::default());
 }
 
-pub fn build_world(channel: Res<Channel>) {
+pub fn _spawn_vox_entities(mut commands: Commands, vox_world: Res<VoxWorld>) {
+    let sphere_file = load("Assets/vox_files/sphere.vox").unwrap();
+    commands.spawn((
+        VoxelEntity {
+            transform: Transform::from_xyz(
+                vox_world.root[0] as f32,
+                vox_world.root[1] as f32 + 128.0,
+                vox_world.root[2] as f32 + 512.0,
+            ),
+            voxels: sphere_file.models[0].voxels.clone(),
+            palette: sphere_file.palette,
+        },
+        MovingEntity,
+    ));
+}
+
+pub fn build_world(channel: Res<Channel>, vox_world: Res<VoxWorld>) {
     let tx = channel.tx.clone();
+    let root = vox_world.root;
     thread::spawn(move || {
         let now = Instant::now();
 
         let mut world = WorldData::default();
-        let world_root = [W_WIDTH; 3];
+        let vox_data = load("Assets/vox_files/sponza.vox").unwrap();
+        let palette = vox_data.palette;
 
-        let room = load_vox("assets/vox_files/room.vox");
-        let room_model = &room.models[2];
-        let room_voxels = &room_model.voxels;
-        let tv_model = &room.models[1];
-        let tv_voxels = &tv_model.voxels;
-        let chest_model = &room.models[0];
-        let chest_voxels = &chest_model.voxels;
-        let palette = &room.palette;
-
-        let mut voxel_count = 0;
-        for vox in room_voxels.iter() {
-            let x = world_root[0] as i32 + vox.x as i32;
-            let y = world_root[1] as i32 + vox.z as i32;
-            let z = world_root[2] as i32 + vox.y as i32;
-
-            let (xx, yy, zz) = (
-                (x as u32 / C_SIZE),
-                (y as u32 / C_SIZE),
-                (z as u32 / C_SIZE),
-            );
-            let vox_color = palette[vox.i as usize];
-            let color = get_u8_color(vox_color);
-            let id = id_from_color([vox_color.r, vox_color.r, vox_color.b]);
-            let chunk = &mut world.data[xx as usize][yy as usize][zz as usize];
-
-            voxel_count += 1;
-            chunk.voxels.insert(
-                [x as u16, y as u16, z as u16],
-                StorageVoxel {
-                    id: id,
-                    color: [color[0], color[1], color[2]],
-                },
-            );
-        }
-        for vox in tv_voxels.iter() {
-            let x = world_root[0] as i32 + vox.x as i32 + 30;
-            let y = world_root[1] as i32 + vox.z as i32 + 2;
-            let z = world_root[2] as i32 + vox.y as i32 + 20;
-
-            let (xx, yy, zz) = (
-                (x as u32 / C_SIZE),
-                (y as u32 / C_SIZE),
-                (z as u32 / C_SIZE),
-            );
-            let vox_color = palette[vox.i as usize];
-            let color = get_u8_color(vox_color);
-            let id = id_from_color([vox_color.r, vox_color.r, vox_color.b]);
-            let chunk = &mut world.data[xx as usize][yy as usize][zz as usize];
-
-            voxel_count += 1;
-            chunk.voxels.insert(
-                [x as u16, y as u16, z as u16],
-                StorageVoxel {
-                    id: id,
-                    color: [color[0], color[1], color[2]],
-                },
-            );
-        }
-        for vox in chest_voxels.iter() {
-            let x = world_root[0] as i32 + vox.x as i32 + 20;
-            let y = world_root[1] as i32 + vox.z as i32 + 2;
-            let z = world_root[2] as i32 + vox.y as i32 + 30;
-
-            let (xx, yy, zz) = (
-                (x as u32 / C_SIZE),
-                (y as u32 / C_SIZE),
-                (z as u32 / C_SIZE),
-            );
-            let vox_color = palette[vox.i as usize];
-            let color = get_u8_color(vox_color);
-            let id = id_from_color([vox_color.r, vox_color.r, vox_color.b]);
-            let chunk = &mut world.data[xx as usize][yy as usize][zz as usize];
-
-            voxel_count += 1;
-            chunk.voxels.insert(
-                [x as u16, y as u16, z as u16],
-                StorageVoxel {
-                    id: id,
-                    color: [color[0], color[1], color[2]],
-                },
-            );
-        }
-
-        let goblin = load_vox("assets/vox_files/goblino.vox");
-        let goblin_model = &goblin.models[0];
-        let goblin_voxels = &goblin_model.voxels;
-        let palette = goblin.palette;
-        for vox in goblin_voxels.iter() {
-            let x = world_root[0] as i32 + vox.x as i32 + 40;
-            let y = world_root[1] as i32 + vox.z as i32 + 2;
-            let z = world_root[2] as i32 + vox.y as i32 + 40;
-
-            let (xx, yy, zz) = (
-                (x as u32 / C_SIZE),
-                (y as u32 / C_SIZE),
-                (z as u32 / C_SIZE),
-            );
-            let vox_color = palette[vox.i as usize];
-            let color = get_u8_color(vox_color);
-            let id = id_from_color([vox_color.r, vox_color.r, vox_color.b]);
-            let chunk = &mut world.data[xx as usize][yy as usize][zz as usize];
-
-            voxel_count += 1;
-            chunk.voxels.insert(
-                [x as u16, y as u16, z as u16],
-                StorageVoxel {
-                    id: id,
-                    color: [color[0], color[1], color[2]],
-                },
-            );
-        }
+        process_scene_node(
+            0,
+            &vox_data.scenes,
+            &vox_data.models,
+            Vec3::new(root[0] as f32, root[2] as f32, root[1] as f32),
+            Quat::IDENTITY,
+            &mut world,
+            &palette,
+        );
 
         let elapsed = now.elapsed().as_millis();
-        if elapsed > 0 {
-            info!("Done!, making world took: {} millis", elapsed);
-            info!("Voxels: {}", voxel_count);
-            // info!(
-            //     "midl_chunk_vox_count: {}",
-            //     world.data[40][40][40].voxels.iter().len()
-            // );
-        }
+        info!("World loading took: {}", elapsed);
 
         match tx.send(world) {
             Ok(_) => {}
@@ -229,11 +148,166 @@ pub fn build_world(channel: Res<Channel>) {
     });
 }
 
-pub fn _get_id(h: u32) -> u8 {
-    if h > W_HEIGHT / 2 {
-        return 1;
-    } else {
-        return 3;
+pub fn process_scene_node(
+    node: u32,
+    scenes: &Vec<SceneNode>,
+    r_models: &Vec<Model>,
+    root: Vec3,
+    rot: Quat,
+    world: &mut WorldData,
+    palette: &Vec<dot_vox::Color>,
+) {
+    match &scenes[node as usize] {
+        SceneNode::Transform { frames, child, .. } => {
+            if frames.len() != 1 {
+                unimplemented!("Multiple frame in transform node");
+            }
+
+            let frame = &frames[0];
+
+            let this_translation = frame
+                .position()
+                .map(|position| Vec3 {
+                    x: position.x as f32,
+                    y: position.y as f32,
+                    z: position.z as f32,
+                })
+                .unwrap_or(Vec3::ZERO);
+            let this_rotation = frame
+                .orientation()
+                .unwrap_or(Rotation::IDENTITY)
+                .to_quat_scale()
+                .0;
+
+            let rotation = Quat::from_vec4(Vec4::new(
+                this_rotation[0],
+                this_rotation[1],
+                this_rotation[2],
+                this_rotation[3],
+            ));
+            let translation = root + this_translation;
+
+            process_scene_node(
+                *child,
+                scenes,
+                r_models,
+                translation,
+                rotation,
+                world,
+                palette,
+            );
+        }
+        SceneNode::Group { children, .. } => {
+            // Process each child node recursively
+            for child_index in children {
+                process_scene_node(*child_index, scenes, r_models, root, rot, world, palette);
+            }
+        }
+        SceneNode::Shape { models, .. } => {
+            // Insert voxels using the calculated current position
+            insert_voxels(
+                &r_models[models[0].model_id as usize],
+                root,
+                rot,
+                palette,
+                world,
+            );
+        }
+    }
+}
+
+fn insert_voxels(
+    model: &Model,
+    root: Vec3,
+    rotation: Quat,
+    palette: &Vec<dot_vox::Color>,
+    world: &mut WorldData,
+) {
+    for vox in model.voxels.iter() {
+        let mut voxel_position = Vec3::new(
+            (root[0] as f32 - (model.size.x as f32 / 2.0)) + vox.x as f32,
+            (root[1] as f32 - (model.size.y as f32 / 2.0)) + vox.y as f32,
+            (root[2] as f32 - (model.size.z as f32 / 2.0)) + vox.z as f32,
+        );
+
+        let rotation = rotation.to_euler(EulerRot::XZY);
+        voxel_position = rotate_around_x(voxel_position, root, rotation.0);
+        voxel_position = rotate_around_z(voxel_position, root, rotation.1);
+        voxel_position = rotate_around_y(voxel_position, root, rotation.2);
+
+        voxel_position = Vec3::new(voxel_position.x, voxel_position.z, voxel_position.y);
+
+        let (xx, yy, zz) = (
+            (voxel_position.x as u32 / C_SIZE),
+            (voxel_position.y as u32 / C_SIZE),
+            (voxel_position.z as u32 / C_SIZE),
+        );
+        let vox_color = palette[vox.i as usize];
+        let color = get_u8_color(vox_color);
+        let id = id_from_color([vox_color.r, vox_color.g, vox_color.b]);
+        let chunk = &mut world.data[xx as usize][yy as usize][zz as usize];
+
+        chunk.voxels.insert(
+            [
+                voxel_position.x as u16,
+                voxel_position.y as u16,
+                voxel_position.z as u16,
+            ],
+            StorageVoxel {
+                id: id,
+                color: [color[0], color[1], color[2]],
+            },
+        );
+    }
+}
+
+fn rotate_around_x(p: Vec3, center: Vec3, angle: f32) -> Vec3 {
+    let ty = p.y - center.y;
+    let tz = p.z - center.z;
+
+    let cos_theta = angle.cos();
+    let sin_theta = angle.sin();
+
+    let rotated_y = ty * cos_theta - tz * sin_theta;
+    let rotated_z = ty * sin_theta + tz * cos_theta;
+
+    return Vec3::new(p.x, rotated_y + center.y, rotated_z + center.z);
+}
+
+fn rotate_around_y(p: Vec3, center: Vec3, angle: f32) -> Vec3 {
+    let tx = p.x - center.x;
+    let tz = p.z - center.z;
+
+    let cos_theta = angle.cos();
+    let sin_theta = angle.sin();
+
+    let rotated_x = tx * cos_theta + tz * sin_theta;
+    let rotated_z = -tx * sin_theta + tz * cos_theta;
+
+    return Vec3::new(rotated_x + center.x, p.y, rotated_z + center.z);
+}
+
+fn rotate_around_z(p: Vec3, center: Vec3, angle: f32) -> Vec3 {
+    let tx = p.x - center.x;
+    let ty = p.y - center.y;
+
+    let cos_theta = angle.cos();
+    let sin_theta = angle.sin();
+
+    let rotated_x = tx * cos_theta - ty * sin_theta;
+    let rotated_y = tx * sin_theta + ty * cos_theta;
+
+    return Vec3::new(rotated_x + center.x, rotated_y + center.y, p.z);
+}
+
+pub fn receive_world(channel: Res<Channel>, world: Res<VoxWorld>) {
+    for _ in 0..channel.rx.len() {
+        if let Ok(result) = channel.rx.try_recv() {
+            let world_clone = Arc::clone(&world.world);
+            thread::spawn(move || {
+                *world_clone.write().unwrap() = result.data;
+            });
+        }
     }
 }
 
@@ -274,27 +348,4 @@ pub fn get_u8_color(color: dot_vox::Color) -> [u8; 3] {
 
 pub fn map_range(from_range: (f32, f32), to_range: (f32, f32), s: f32) -> f32 {
     to_range.0 + (s - from_range.0) * (to_range.1 - to_range.0) / (from_range.1 - from_range.0)
-}
-
-pub fn receive_world(channel: Res<Channel>, mut world: ResMut<VoxWorld>) {
-    if channel.rx.len() > 0 {
-        match channel.rx.try_recv() {
-            Ok(result) => {
-                world.world = Arc::new(RwLock::new(result.data));
-
-                info!("Loaded world!");
-            }
-            Err(err) => info!("Error receiving world: {}", err),
-        }
-    }
-}
-
-pub fn load_vox(asset: &str) -> DotVoxData {
-    let result = load(asset);
-    match result {
-        Ok(result) => return result,
-        Err(err) => {
-            panic!("could not load voxel asset: {}, err: {}", asset, err);
-        }
-    }
 }

@@ -4,9 +4,10 @@ use bevy::{
     window::WindowMode,
 };
 use compute::RayTracerPlugin;
-use entity_spawner::spawn_point_lights;
-use generate_octree::update_octree;
+use entity_controller::move_entities;
+use generate_octree::create_octree;
 use light_controller::animate_lights;
+use light_spawner::spawn_point_lights;
 use player_controller::{
     initial_grab_cursor, move_player, player_look, spawn_player, InputState, MovementSettings,
 };
@@ -14,9 +15,10 @@ use pre_compute::{setup_shader_screen, update_shader_screen};
 use world_generator::{build_world, receive_world};
 
 mod compute;
-mod entity_spawner;
+mod entity_controller;
 mod generate_octree;
 mod light_controller;
+mod light_spawner;
 mod octree;
 mod player_controller;
 mod pre_compute;
@@ -27,9 +29,9 @@ fn main() {
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: "VoxelRayTracer".into(),
+                    title: "VoxelRayMarcher".into(),
                     resolution: (pre_compute::RESWIDTH as f32, pre_compute::RESHIGHT as f32).into(),
-                    mode: WindowMode::BorderlessFullscreen,
+                    mode: WindowMode::Windowed,
                     resizable: false,
                     ..Default::default()
                 }),
@@ -44,9 +46,9 @@ fn main() {
         .add_systems(
             Startup,
             (
+                world_generator::setup,
                 pre_compute::setup,
                 generate_octree::setup,
-                world_generator::setup,
                 spawn_point_lights,
                 initial_grab_cursor,
                 setup_shader_screen,
@@ -62,9 +64,10 @@ fn main() {
                 receive_world,
                 move_player,
                 player_look,
+                move_entities,
                 animate_lights,
                 update_shader_screen,
-                update_octree,
+                create_octree,
             )
                 .chain(),
         )
