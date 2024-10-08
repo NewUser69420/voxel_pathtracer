@@ -2,7 +2,7 @@ use crate::{
     light_controller::VoxelLightEmitter,
     octree::{Octree, ShaderOctree},
     pre_compute::{RESHIGHT, RESWIDTH},
-    world_generator,
+    world_generator::VIEWDIST,
 };
 use bevy::{
     app::{App, Plugin},
@@ -189,7 +189,7 @@ fn extract_resources(
         .collect();
 
     let elapsed = now.elapsed().as_millis();
-    if elapsed > 0 {
+    if elapsed > 2 {
         info!("extracting resources took: {}", elapsed)
     }
 }
@@ -249,7 +249,7 @@ fn update_buffers(
 
     let elapsed = now.elapsed().as_millis();
     if elapsed > 5 {
-        info!("updating buffers took: {}", elapsed)
+        info!("updating buffers took: {}", elapsed);
     }
 }
 
@@ -379,7 +379,7 @@ impl FromWorld for RayTracePipeLine {
         );
         let shader = world
             .resource::<AssetServer>()
-            .load("shaders/raymarcher.wgsl");
+            .load("shaders/raymarcher(traced_light).wgsl");
         let pipeline_cache = world.resource::<PipelineCache>();
         let update_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
@@ -564,7 +564,7 @@ fn update_screen_buffer(render_queue: RenderQueue, buffer: &Buffer, screen: Shad
 fn setup_view_distance_buffer(render_device: RenderDevice) -> Buffer {
     let mut byte_buffer = Vec::new();
     let mut buffer = StorageBuffer::new(&mut byte_buffer);
-    buffer.write(&world_generator::VIEWDIST).unwrap();
+    buffer.write(&VIEWDIST).unwrap();
     render_device.create_buffer_with_data(&wgpu::util::BufferInitDescriptor {
         label: None,
         contents: buffer.into_inner(),

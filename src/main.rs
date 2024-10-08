@@ -4,24 +4,23 @@ use bevy::{
     window::WindowMode,
 };
 use compute::RayTracerPlugin;
-use entity_controller::move_entities;
-use generate_octree::create_octree;
-use light_controller::animate_lights;
+use generate_octree::{create_octree, GenerateOctreeEvent};
 use light_spawner::spawn_point_lights;
 use player_controller::{
     initial_grab_cursor, move_player, player_look, spawn_player, InputState, MovementSettings,
 };
 use pre_compute::{setup_shader_screen, update_shader_screen};
-use world_generator::{build_world, receive_world};
+use test::{CalculateNormalEvent, TestPosition, TestVector};
+use world_generator::{build_world, receive_world, VoxWorld};
 
 mod compute;
-mod entity_controller;
 mod generate_octree;
 mod light_controller;
 mod light_spawner;
 mod octree;
 mod player_controller;
 mod pre_compute;
+mod test;
 mod world_generator;
 
 fn main() {
@@ -41,20 +40,25 @@ fn main() {
             FrameTimeDiagnosticsPlugin::default(),
             LogDiagnosticsPlugin::default(),
         ))
+        .add_event::<GenerateOctreeEvent>()
+        .add_event::<CalculateNormalEvent>()
         .init_resource::<MovementSettings>()
         .init_resource::<InputState>()
+        .init_resource::<VoxWorld>()
+        .init_resource::<TestPosition>()
+        .init_resource::<TestVector>()
         .add_systems(
             Startup,
             (
-                world_generator::setup,
                 pre_compute::setup,
                 generate_octree::setup,
-                spawn_point_lights,
+                world_generator::setup,
                 initial_grab_cursor,
                 setup_shader_screen,
                 apply_deferred,
-                spawn_player,
                 build_world,
+                spawn_point_lights,
+                spawn_player,
             )
                 .chain(),
         )
@@ -64,10 +68,11 @@ fn main() {
                 receive_world,
                 move_player,
                 player_look,
-                move_entities,
-                animate_lights,
                 update_shader_screen,
                 create_octree,
+                // test::check_for_perform,
+                // test::normal_test,
+                // test::draw_gizmos,
             )
                 .chain(),
         )

@@ -7,9 +7,9 @@ use bevy::{
 
 use crate::{
     compute::RayTracerTexture,
-    light_controller::{VariableLight, VoxelLightEmitter},
+    light_controller::VoxelLightEmitter,
     pre_compute::{FOV, RESHIGHT, RESWIDTH},
-    world_generator::{VoxWorld, METER},
+    world_generator::VoxWorld,
 };
 
 #[derive(Component)]
@@ -49,9 +49,9 @@ pub fn spawn_player(
 ) {
     let player = (
         SpatialBundle::from_transform(Transform::from_xyz(
-            vox_world.root[0] as f32 + 256.0,
-            vox_world.root[1] as f32 + 96.0,
-            vox_world.root[2] as f32 + 256.0,
+            vox_world.root[0] as f32,
+            vox_world.root[1] as f32,
+            vox_world.root[2] as f32 + 32.0,
         )),
         VoxelLightEmitter {
             radius: 1.0,
@@ -61,12 +61,11 @@ pub fn spawn_player(
             fov: 0,
             color: Vec3::new(1.0, 0.9, 0.8),
         },
-        VariableLight((0.5, 0.9, 0.7)),
+        // VariableLight((0.5, 0.9, 0.7)),
         Player,
     );
     let tracer_cam = (
         Camera3dBundle {
-            transform: Transform::from_xyz(0.0, METER as f32 - 1.0, 0.0),
             projection: Projection::Perspective(PerspectiveProjection {
                 fov: (FOV / 2) as f32,
                 aspect_ratio: (RESWIDTH / RESHIGHT) as f32,

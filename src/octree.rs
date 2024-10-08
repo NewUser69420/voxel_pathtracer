@@ -146,7 +146,7 @@ impl Octree {
     }
 }
 
-fn get_leaf(root: [f32; 3], pos: [f32; 3]) -> u32 {
+pub fn get_leaf(root: [f32; 3], pos: [f32; 3]) -> u32 {
     let mut idx: u32 = 0;
 
     if pos[0] >= root[0] {
@@ -166,7 +166,7 @@ fn get_leaf(root: [f32; 3], pos: [f32; 3]) -> u32 {
     return idx;
 }
 
-fn get_new_root(idx: u32, old_root: [f32; 3], old_width: f32) -> [f32; 3] {
+pub fn get_new_root(idx: u32, old_root: [f32; 3], old_width: f32) -> [f32; 3] {
     let x_base = old_root[0];
     let y_base = old_root[1];
     let z_base = old_root[2];

@@ -10,7 +10,7 @@ pub fn spawn_point_lights(mut commands: Commands, vox_world: Res<VoxWorld>) {
     commands.spawn((
         TransformBundle::from_transform(Transform::from_xyz(
             vox_world.root[0] as f32,
-            vox_world.root[1] as f32 + 64.0,
+            vox_world.root[1] as f32 + 96.0,
             vox_world.root[2] as f32,
         )),
         VoxelLightEmitter {

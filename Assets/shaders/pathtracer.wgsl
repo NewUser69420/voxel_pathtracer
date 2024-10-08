@@ -1,8 +1,17 @@
 const U32MAX: u32 = 4294967295;
 const EPSILON: f32 = 1e-6;
+const PI: f32 = 3.14159;
+
 const MAXSTEP: u32 = 100;
+const TRACELENGTH: f32 = 128.0;
+const SKYDIST: f32 = 512.0;
+
+const SAMPLECOUNT: u32 = 2u;
 const SHADOWSOFTNESS: f32 = 1.3;
 const LIGHTDIFFUSION: f32 = 30.0;
+
+const SKYCOLOR: vec3<f32> = vec3<f32>(1.0, 0.9, 0.8);
+const AMBIENTCOLOR: vec3<f32> = vec3<f32>(0.3, 0.25, 0.25);
 
 struct Octree {
     root: array<f32, 3>,
@@ -52,6 +61,17 @@ struct Emitter {
     falloff: f32,
     fov: u32,
     color: vec3<f32>,
+}
+
+struct RayResult {
+    dist: f32,
+    color: vec3<f32>,
+}
+
+struct OctResult {
+    idx: u32,
+    width: f32,
+    root: array<f32, 3>,
 }
 
 @group(0) @binding(0) var<storage, read> octree: Octree;
@@ -117,7 +137,7 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
 
     while (length < f32(view_distance) && steps < MAXSTEP) {
         let photon = at_length(r, length);
-
+        
         var root = octree.root;
         var width = octree.width;
         var node = leaves[0];
@@ -125,33 +145,74 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
         var exit = 0u;
         while next_index != U32MAX && exit < MAXSTEP {
             let i = get_leaf(root, photon);
-
             node = leaves[next_index];
             next_index = node.children[i];
-
             if next_index != U32MAX {
                 root = get_new_root(i, root, width);
-                width = width / 2;
+                width = width / 2.0;
             }
-
             exit += 1u;
         }
 
         if node.voxel.id != 0 {
             var color = node.voxel.color;
+            var indir_color = vec3<f32>();
+            
+            //compute some values
+            let r1 = rand(vec2<f32>(photon.x, photon.y));
+            let r2 = rand(vec2<f32>(photon.y, photon.x));
+            let r3 = (r1) - (r2);
+            let normal = compute_normal(photon, width / 2.0);
+            let cs = create_coordinate_system(normal);
+
+            for (var i = 0u; i < SAMPLECOUNT; i++) {
+                let r_sample = uniformSampleHemisphere(r1, r2);
+                let world_sample = vec3<f32>(
+                    r_sample.x * cs[2].x + r_sample.y * normal.x + r_sample.z * cs[0].x,
+                    r_sample.x * cs[2].y + r_sample.y * normal.y + r_sample.z * cs[0].y,
+                    r_sample.x * cs[2].z + r_sample.y * normal.z + r_sample.z * cs[0].z
+                );
+
+                //cast ray
+                var ray = AabbRay(at_length(AabbRay(photon, world_sample, vec3<f32>()), 1.0), world_sample, vec3<f32>());
+                ray.inv_direction = vec3<f32>(1.0/ray.direction.x, 1.0/ray.direction.y, 1.0/ray.direction.z);
+                let result = cast_ray(ray, SKYDIST);
+                
+                let range_mod = 1 - map_range(
+                0.0, SKYDIST,
+                0.0, 1.0,
+                result.dist,
+                );
+
+                if result.dist < SKYDIST - (SKYDIST * 0.1) {
+                    //hits something so ambient colour
+                    indir_color += AMBIENTCOLOR * range_mod;
+                } else {
+                    //did not hit something, so light colour
+                    indir_color += SKYCOLOR * range_mod;
+                }
+            }
+            for (var i = 0; i < 3; i++ ) {
+                indir_color[i] /= f32(SAMPLECOUNT);
+            }
+
+            color *= indir_color;
 
             return vec4<f32>(color[0], color[1], color[2], 1.0);
         }
 
         //continue to next safe dist
-        length += ray_box_intersect(AabbRay(photon, r.direction, r.inv_direction), Aabb(vec3<f32>(root[0] - (width / 2), root[1] - (width / 2), root[2] - (width / 2)), vec3<f32>(root[0] + (width / 2), root[1] + (width / 2), root[2] + (width / 2)))).y + 0.1;
+        length += ray_box_intersect(
+            AabbRay(photon, r.direction, r.inv_direction), 
+            Aabb(vec3<f32>(root[0] - (width / 2), root[1] - (width / 2), root[2] - (width / 2)), vec3<f32>(root[0] + (width / 2), root[1] + (width / 2), root[2] + (width / 2)))
+            ).y + 0.1;
         steps ++;
     }
 
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }
 
-fn cast_ray(r: AabbRay, range: f32) -> f32 {
+fn cast_ray(r: AabbRay, range: f32) -> RayResult {
     var length = 0.1;
     var steps = 0u;
 
@@ -178,7 +239,7 @@ fn cast_ray(r: AabbRay, range: f32) -> f32 {
         }
 
         if node.voxel.id != 0 {
-            return length;
+            return RayResult(length, node.voxel.color);
         }
 
         //continue to next safe dist
@@ -186,7 +247,7 @@ fn cast_ray(r: AabbRay, range: f32) -> f32 {
         steps ++;
     }
 
-    return length;
+    return RayResult(length, vec3<f32>());
 }
 
 fn ray_box_intersect(r: AabbRay, b: Aabb) -> vec2<f32> {
@@ -210,6 +271,77 @@ fn ray_box_intersect(r: AabbRay, b: Aabb) -> vec2<f32> {
     
     tmin = max(tmin, 0.0);
     return vec2<f32>(tmin, tmax);
+}
+
+fn compute_normal(vox_pos: vec3<f32>, vox_size: f32) -> vec3<f32> {
+    var normal = vec3<f32>();
+
+    let offset_x = vec3<f32>(1.0, 0.0, 0.0);
+    let offset_y = vec3<f32>(0.0, 1.0, 0.0);
+    let offset_z = vec3<f32>(0.0, 0.0, 1.0);
+
+    let voxel_xp = f32(check_for_voxel(vox_pos + offset_x));
+    let voxel_xm = f32(check_for_voxel(vox_pos - offset_x));
+    let voxel_yp = f32(check_for_voxel(vox_pos + offset_y));
+    let voxel_ym = f32(check_for_voxel(vox_pos - offset_y));
+    let voxel_zp = f32(check_for_voxel(vox_pos + offset_z));
+    let voxel_zm = f32(check_for_voxel(vox_pos - offset_z));
+
+    normal.x = -voxel_xp + voxel_xm;
+    normal.y = -voxel_yp + voxel_ym;
+    normal.z = -voxel_zp + voxel_zm;
+
+    // normal = rotate_at_y(normal, 90_f32.to_radians());
+
+    if length(normal) > 0.0 {
+        return normalize(normal);
+    } else {
+        return vec3<f32>();
+    }
+}
+
+fn check_for_voxel(pos: vec3<f32>) -> bool {
+    var root = octree.root;
+    var width = octree.width;
+    var node = leaves[0];
+    var next_index = 0u;
+    var exit = 0u;
+    while next_index != U32MAX && exit < 100 {
+        let i = get_leaf(root, pos);
+        node = leaves[next_index];
+        next_index = node.children[i];
+        if next_index != U32MAX {
+            root = get_new_root(i, root, width);
+            width = width / 2.0;
+        }
+        exit += 1u;
+    }
+    if node.voxel.id != 0u {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+fn create_coordinate_system(n: vec3<f32>) -> array<vec3<f32>, 3> {
+    var nt = vec3<f32>();
+    var nb = vec3<f32>();
+    if abs(n.x) > abs(n.y) {
+        nt = vec3<f32>(n.z, 0, -n.x) / sqrt((n.x * n.x) + (n.z * n.z));
+    } else {
+        nt = vec3<f32>(0, -n.z, n.y) / sqrt((n.y * n.y) + (n.z * n.z));
+    }
+    nb = cross(n, nt);
+
+    return array<vec3<f32>, 3>(nt, n, nb);
+}
+
+fn uniformSampleHemisphere(r1: f32, r2: f32) -> vec3<f32> {
+    let sin_theta = sqrt(1 - r1 * r1);
+    let phi = 2 * PI * r2;
+    let x = sin_theta * cos(phi);
+    let z = sin_theta * sin(phi);
+    return vec3<f32>(x, r1, z);
 }
 
 fn at_length(ray: AabbRay, length: f32) -> vec3<f32> {

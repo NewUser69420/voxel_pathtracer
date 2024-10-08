@@ -9,14 +9,12 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use dot_vox::{load, Model, Rotation, SceneNode, Voxel};
 use serde::{Deserialize, Serialize};
 
-use crate::{entity_controller::MovingEntity, octree::OctreeVoxel};
+use crate::{generate_octree::GenerateOctreeEvent, octree::OctreeVoxel};
 
-pub const METER: u32 = 8;
 pub const VIEWDIST: u32 = 1024;
 pub const RENDERDIST: u32 = 1024;
 pub const ENTITYDRAW: u32 = 512;
 pub const W_WIDTH: u32 = 4096;
-pub const W_HEIGHT: u32 = 4096;
 pub const C_SIZE: u32 = 64;
 
 #[derive(Resource)]
@@ -33,11 +31,11 @@ impl Default for VoxWorld {
                         Chunk::default();
                         ((W_WIDTH * 2) / C_SIZE) as usize
                     ];
-                    ((W_HEIGHT * 2) / C_SIZE) as usize
+                    ((W_WIDTH * 2) / C_SIZE) as usize
                 ];
                 ((W_WIDTH * 2) / C_SIZE) as usize
             ])),
-            root: [W_WIDTH - (W_WIDTH / 2); 3],
+            root: [W_WIDTH; 3],
         }
     }
 }
@@ -75,7 +73,7 @@ impl Default for WorldData {
             data: vec![
                 vec![
                     vec![Chunk::default(); ((W_WIDTH * 2) / C_SIZE) as usize];
-                    ((W_HEIGHT * 2) / C_SIZE) as usize
+                    ((W_WIDTH * 2) / C_SIZE) as usize
                 ];
                 ((W_WIDTH * 2) / C_SIZE) as usize
             ],
@@ -114,7 +112,7 @@ pub fn _spawn_vox_entities(mut commands: Commands, vox_world: Res<VoxWorld>) {
             voxels: sphere_file.models[0].voxels.clone(),
             palette: sphere_file.palette,
         },
-        MovingEntity,
+        // MovingEntity,
     ));
 }
 
@@ -125,9 +123,10 @@ pub fn build_world(channel: Res<Channel>, vox_world: Res<VoxWorld>) {
         let now = Instant::now();
 
         let mut world = WorldData::default();
+
+        //spawn 1
         let vox_data = load("Assets/vox_files/sponza.vox").unwrap();
         let palette = vox_data.palette;
-
         process_scene_node(
             0,
             &vox_data.scenes,
@@ -137,6 +136,19 @@ pub fn build_world(channel: Res<Channel>, vox_world: Res<VoxWorld>) {
             &mut world,
             &palette,
         );
+
+        //spawn 2
+        // let vox_data = load("Assets/vox_files/simple_scene.vox").unwrap();
+        // let palette = vox_data.palette;
+        // process_scene_node(
+        //     0,
+        //     &vox_data.scenes,
+        //     &vox_data.models,
+        //     Vec3::new(root[0] as f32, root[2] as f32 + 96.0, root[1] as f32),
+        //     Quat::IDENTITY,
+        //     &mut world,
+        //     &palette,
+        // );
 
         let elapsed = now.elapsed().as_millis();
         info!("World loading took: {}", elapsed);
@@ -300,13 +312,15 @@ fn rotate_around_z(p: Vec3, center: Vec3, angle: f32) -> Vec3 {
     return Vec3::new(rotated_x + center.x, rotated_y + center.y, p.z);
 }
 
-pub fn receive_world(channel: Res<Channel>, world: Res<VoxWorld>) {
+pub fn receive_world(
+    channel: Res<Channel>,
+    world: Res<VoxWorld>,
+    mut event_writer: EventWriter<GenerateOctreeEvent>,
+) {
     for _ in 0..channel.rx.len() {
         if let Ok(result) = channel.rx.try_recv() {
-            let world_clone = Arc::clone(&world.world);
-            thread::spawn(move || {
-                *world_clone.write().unwrap() = result.data;
-            });
+            *world.world.write().unwrap() = result.data;
+            event_writer.send(GenerateOctreeEvent);
         }
     }
 }
