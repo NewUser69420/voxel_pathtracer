@@ -1,3 +1,4 @@
+use core::f32;
 use std::{
     sync::{Arc, RwLock},
     thread,
@@ -11,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{generate_octree::GenerateOctreeEvent, octree::OctreeVoxel};
 
-pub const VIEWDIST: u32 = 1024;
-pub const RENDERDIST: u32 = 1024;
+pub const VIEWDIST: u32 = 512;
+pub const RENDERDIST: u32 = 512;
 pub const ENTITYDRAW: u32 = 512;
 pub const W_WIDTH: u32 = 4096;
 pub const C_SIZE: u32 = 64;
@@ -49,6 +50,7 @@ pub struct Chunk {
 pub struct StorageVoxel {
     pub id: u8,
     pub color: [u8; 3],
+    pub emission: f32,
 }
 impl StorageVoxel {
     pub fn into_normal(self: &Self) -> OctreeVoxel {
@@ -59,6 +61,8 @@ impl StorageVoxel {
                 self.color[1] as f32 / 100.0,
                 self.color[2] as f32 / 100.0,
             ),
+            emission: self.emission,
+            lit: 0,
         }
     }
 }
@@ -86,6 +90,7 @@ pub struct VoxelEntity {
     pub transform: Transform,
     pub voxels: Vec<Voxel>,
     pub palette: Vec<dot_vox::Color>,
+    pub materials: Vec<dot_vox::Material>,
 }
 
 #[derive(Resource)]
@@ -111,6 +116,7 @@ pub fn _spawn_vox_entities(mut commands: Commands, vox_world: Res<VoxWorld>) {
             ),
             voxels: sphere_file.models[0].voxels.clone(),
             palette: sphere_file.palette,
+            materials: sphere_file.materials,
         },
         // MovingEntity,
     ));
@@ -125,7 +131,8 @@ pub fn build_world(channel: Res<Channel>, vox_world: Res<VoxWorld>) {
         let mut world = WorldData::default();
 
         //spawn 1
-        let vox_data = load("Assets/vox_files/sponza.vox").unwrap();
+        let vox_data = load("Assets/vox_files/emission_test.vox").unwrap();
+        let materials = vox_data.materials;
         let palette = vox_data.palette;
         process_scene_node(
             0,
@@ -135,6 +142,7 @@ pub fn build_world(channel: Res<Channel>, vox_world: Res<VoxWorld>) {
             Quat::IDENTITY,
             &mut world,
             &palette,
+            &materials,
         );
 
         //spawn 2
@@ -168,6 +176,7 @@ pub fn process_scene_node(
     rot: Quat,
     world: &mut WorldData,
     palette: &Vec<dot_vox::Color>,
+    materials: &Vec<dot_vox::Material>,
 ) {
     match &scenes[node as usize] {
         SceneNode::Transform { frames, child, .. } => {
@@ -207,12 +216,22 @@ pub fn process_scene_node(
                 rotation,
                 world,
                 palette,
+                materials,
             );
         }
         SceneNode::Group { children, .. } => {
             // Process each child node recursively
             for child_index in children {
-                process_scene_node(*child_index, scenes, r_models, root, rot, world, palette);
+                process_scene_node(
+                    *child_index,
+                    scenes,
+                    r_models,
+                    root,
+                    rot,
+                    world,
+                    palette,
+                    materials,
+                );
             }
         }
         SceneNode::Shape { models, .. } => {
@@ -222,6 +241,7 @@ pub fn process_scene_node(
                 root,
                 rot,
                 palette,
+                materials,
                 world,
             );
         }
@@ -233,6 +253,7 @@ fn insert_voxels(
     root: Vec3,
     rotation: Quat,
     palette: &Vec<dot_vox::Color>,
+    materials: &Vec<dot_vox::Material>,
     world: &mut WorldData,
 ) {
     for vox in model.voxels.iter() {
@@ -254,9 +275,12 @@ fn insert_voxels(
             (voxel_position.y as u32 / C_SIZE),
             (voxel_position.z as u32 / C_SIZE),
         );
+
         let vox_color = palette[vox.i as usize];
         let color = get_u8_color(vox_color);
+        let emission = materials[vox.i as usize].emission().unwrap_or(0.0);
         let id = id_from_color([vox_color.r, vox_color.g, vox_color.b]);
+
         let chunk = &mut world.data[xx as usize][yy as usize][zz as usize];
 
         chunk.voxels.insert(
@@ -266,8 +290,9 @@ fn insert_voxels(
                 voxel_position.z as u16,
             ],
             StorageVoxel {
-                id: id,
-                color: [color[0], color[1], color[2]],
+                id,
+                color,
+                emission,
             },
         );
     }
@@ -352,14 +377,14 @@ pub fn id_from_color(color: [u8; 3]) -> u8 {
     }
 }
 
+pub fn map_range(from_range: (f32, f32), to_range: (f32, f32), s: f32) -> f32 {
+    to_range.0 + (s - from_range.0) * (to_range.1 - to_range.0) / (from_range.1 - from_range.0)
+}
+
 pub fn get_u8_color(color: dot_vox::Color) -> [u8; 3] {
     let r = map_range((0.0, 255.0), (0.0, 0.2), color.r as f32);
     let g = map_range((0.0, 255.0), (0.0, 0.2), color.g as f32);
     let b = map_range((0.0, 255.0), (0.0, 0.2), color.b as f32);
 
     return [(r * 100.0) as u8, (g * 100.0) as u8, (b * 100.0) as u8];
-}
-
-pub fn map_range(from_range: (f32, f32), to_range: (f32, f32), s: f32) -> f32 {
-    to_range.0 + (s - from_range.0) * (to_range.1 - to_range.0) / (from_range.1 - from_range.0)
 }

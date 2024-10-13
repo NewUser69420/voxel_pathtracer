@@ -32,7 +32,7 @@ impl Leaf {
     pub fn empty() -> Self {
         Leaf {
             voxel: OctreeVoxel::empty(),
-            children: [U32MAX; 8],
+            children: [U32MAX; 8], //put this information into one u32, and extract it back into 8 numbers in the shader
         }
     }
 }
@@ -41,12 +41,16 @@ impl Leaf {
 pub struct OctreeVoxel {
     pub id: u32,
     pub color: Vec3,
+    pub emission: f32,
+    pub lit: u32,
 }
 impl OctreeVoxel {
     pub fn empty() -> Self {
         OctreeVoxel {
             id: 0,
             color: Vec3::ZERO,
+            emission: 0.0,
+            lit: 0,
         }
     }
 }
@@ -183,9 +187,9 @@ pub fn get_new_root(idx: u32, old_root: [f32; 3], old_width: f32) -> [f32; 3] {
 pub fn get_lod(vox_pos: Vec3, cam_pos: Vec3) -> u32 {
     let dist = vox_pos.distance(cam_pos) as u32;
     match dist {
-        0..=256 => 1,
-        257..=512 => 2,
-        513..=1024 => 4,
+        0..=128 => 1,
+        129..=256 => 2,
+        257..=1024 => 4,
         1025..=2048 => 8,
         _ => 16,
     }

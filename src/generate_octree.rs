@@ -31,7 +31,7 @@ pub fn setup(mut commands: Commands) {
     commands.insert_resource(Trigger(lock));
 }
 
-pub fn _run_octree(mut event_writer: EventWriter<GenerateOctreeEvent>) {
+pub fn run_octree(mut event_writer: EventWriter<GenerateOctreeEvent>) {
     event_writer.send(GenerateOctreeEvent);
 }
 
@@ -102,16 +102,14 @@ pub fn create_octree(
                                     for (vox_pos, vox) in
                                         world[x as usize][y as usize][z as usize].voxels.iter_mut()
                                     {
-                                        // let lod = get_lod(
-                                        //     Vec3::new(
-                                        //         vox_pos[0] as f32,
-                                        //         vox_pos[1] as f32,
-                                        //         vox_pos[2] as f32,
-                                        //     ),
-                                        //     cam_pos,
-                                        // );
-
-                                        let lod = 1;
+                                        let lod = get_lod(
+                                            Vec3::new(
+                                                vox_pos[0] as f32,
+                                                vox_pos[1] as f32,
+                                                vox_pos[2] as f32,
+                                            ),
+                                            cam_pos,
+                                        );
 
                                         match lod {
                                             1 => {
@@ -199,10 +197,14 @@ pub fn create_octree(
                                 let vox_color = vox_entity.palette[voxel.i as usize];
                                 let color = get_u8_color(vox_color);
                                 let id = id_from_color([vox_color.r, vox_color.r, vox_color.b]);
+                                let emission = vox_entity.materials[voxel.i as usize]
+                                    .emission()
+                                    .unwrap_or(0.0);
 
                                 let vox = StorageVoxel {
-                                    id: id,
-                                    color: [color[0], color[1], color[2]],
+                                    id,
+                                    color,
+                                    emission,
                                 };
 
                                 new_octree.insert(

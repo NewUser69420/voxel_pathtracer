@@ -3,15 +3,11 @@ const EPSILON: f32 = 1e-6;
 const PI: f32 = 3.14159;
 
 const MAXSTEP: u32 = 100;
-const TRACELENGTH: f32 = 128.0;
 const SKYDIST: f32 = 512.0;
+const SAMPLECOUNT: u32 = 4u;
 
-const SAMPLECOUNT: u32 = 2u;
-const SHADOWSOFTNESS: f32 = 1.3;
-const LIGHTDIFFUSION: f32 = 30.0;
-
-const SKYCOLOR: vec3<f32> = vec3<f32>(1.0, 0.9, 0.8);
-const AMBIENTCOLOR: vec3<f32> = vec3<f32>(0.3, 0.25, 0.25);
+const SKYCOLOR: vec3<f32> = vec3<f32>(0.9, 0.9, 1.0);
+const AMBIENTCOLOR: vec3<f32> = vec3<f32>(0.2, 0.2, 0.2);
 
 struct Octree {
     root: array<f32, 3>,
@@ -26,6 +22,8 @@ struct Leaf {
 struct OctreeVoxel {
     id: u32,
     color: vec3<f32>,
+    emission: f32,
+    lit: u32,
 }
 
 struct ShaderScreen {
@@ -52,19 +50,9 @@ struct AabbData {
     t: f32,
 }
 
-struct Emitter {
-    position: vec3<f32>,
-    rotation: vec3<f32>,
-    radius: f32,
-    strength: f32,
-    range: f32,
-    falloff: f32,
-    fov: u32,
-    color: vec3<f32>,
-}
-
 struct RayResult {
     dist: f32,
+    emission: f32,
     color: vec3<f32>,
 }
 
@@ -78,9 +66,7 @@ struct OctResult {
 @group(0) @binding(1) var<storage, read_write> leaves: array<Leaf>;
 @group(0) @binding(2) var<storage, read> screen: ShaderScreen;
 @group(0) @binding(3) var<storage, read> view_distance: u32;
-@group(0) @binding(4) var<storage, read> emitters: array<Emitter>;
-@group(0) @binding(5) var<storage, read> emitter_num: u32;
-@group(0) @binding(6) var texture: texture_storage_2d<rgba8unorm, read_write>;
+@group(0) @binding(4) var texture: texture_storage_2d<rgba8unorm, read_write>;
 
 @compute @workgroup_size(16, 18, 1)
 fn update(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -94,9 +80,6 @@ fn update(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var r = AabbRay(vec3<f32>(screen.pos[0], screen.pos[1], screen.pos[2]), dir, vec3<f32>());
     r.inv_direction = vec3<f32>(1.0/r.direction.x, 1.0/r.direction.y, 1.0/r.direction.z);
     var color = get_pixel_color(r);
-    // if (position.x > (960 - 5)) && (position.x < (960 + 5)) && (position.y > (540 - 5)) && (position.y < (540 + 5)) {
-    //     color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
-    // }
 
     textureStore(texture, position, color);
 }
@@ -156,9 +139,9 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
 
         if node.voxel.id != 0 {
             var color = node.voxel.color;
-            var indir_color = vec3<f32>();
             
-            //compute some values
+            //setup values
+            var light_color = vec3<f32>();
             let r1 = rand(vec2<f32>(photon.x, photon.y));
             let r2 = rand(vec2<f32>(photon.y, photon.x));
             let r3 = (r1) - (r2);
@@ -178,25 +161,29 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
                 ray.inv_direction = vec3<f32>(1.0/ray.direction.x, 1.0/ray.direction.y, 1.0/ray.direction.z);
                 let result = cast_ray(ray, SKYDIST);
                 
-                let range_mod = 1 - map_range(
+                let range_mod = map_range(
                 0.0, SKYDIST,
                 0.0, 1.0,
                 result.dist,
                 );
 
                 if result.dist < SKYDIST - (SKYDIST * 0.1) {
-                    //hits something so ambient colour
-                    indir_color += AMBIENTCOLOR * range_mod;
+                    //hits something so ambient colour or emmisive colour
+                    if result.emission == 0.0 {
+                        light_color += AMBIENTCOLOR * range_mod;
+                    } else {
+                        light_color += result.color * map_range(0.0, 1.0, 0.0, 5.0, result.emission) * (1 - range_mod);
+                    }
                 } else {
                     //did not hit something, so light colour
-                    indir_color += SKYCOLOR * range_mod;
+                    light_color += SKYCOLOR;
                 }
             }
             for (var i = 0; i < 3; i++ ) {
-                indir_color[i] /= f32(SAMPLECOUNT);
+                light_color[i] /= f32(SAMPLECOUNT);
             }
 
-            color *= indir_color;
+            color *= light_color;
 
             return vec4<f32>(color[0], color[1], color[2], 1.0);
         }
@@ -239,7 +226,7 @@ fn cast_ray(r: AabbRay, range: f32) -> RayResult {
         }
 
         if node.voxel.id != 0 {
-            return RayResult(length, node.voxel.color);
+            return RayResult(min(length, SKYDIST), node.voxel.emission, vec3<f32>(node.voxel.color[0], node.voxel.color[1], node.voxel.color[2]));
         }
 
         //continue to next safe dist
@@ -247,7 +234,7 @@ fn cast_ray(r: AabbRay, range: f32) -> RayResult {
         steps ++;
     }
 
-    return RayResult(length, vec3<f32>());
+    return RayResult(min(length, SKYDIST), 0.0, vec3<f32>());
 }
 
 fn ray_box_intersect(r: AabbRay, b: Aabb) -> vec2<f32> {
@@ -280,18 +267,16 @@ fn compute_normal(vox_pos: vec3<f32>, vox_size: f32) -> vec3<f32> {
     let offset_y = vec3<f32>(0.0, 1.0, 0.0);
     let offset_z = vec3<f32>(0.0, 0.0, 1.0);
 
-    let voxel_xp = f32(check_for_voxel(vox_pos + offset_x));
-    let voxel_xm = f32(check_for_voxel(vox_pos - offset_x));
-    let voxel_yp = f32(check_for_voxel(vox_pos + offset_y));
-    let voxel_ym = f32(check_for_voxel(vox_pos - offset_y));
-    let voxel_zp = f32(check_for_voxel(vox_pos + offset_z));
-    let voxel_zm = f32(check_for_voxel(vox_pos - offset_z));
+    let voxel_xp = check_for_voxel(vox_pos + offset_x);
+    let voxel_xm = check_for_voxel(vox_pos - offset_x);
+    let voxel_yp = check_for_voxel(vox_pos + offset_y);
+    let voxel_ym = check_for_voxel(vox_pos - offset_y);
+    let voxel_zp = check_for_voxel(vox_pos + offset_z);
+    let voxel_zm = check_for_voxel(vox_pos - offset_z);
 
-    normal.x = -voxel_xp + voxel_xm;
-    normal.y = -voxel_yp + voxel_ym;
-    normal.z = -voxel_zp + voxel_zm;
-
-    // normal = rotate_at_y(normal, 90_f32.to_radians());
+    normal.x = voxel_xm - voxel_xp;
+    normal.y = voxel_ym - voxel_yp;
+    normal.z = voxel_zm - voxel_zp;
 
     if length(normal) > 0.0 {
         return normalize(normal);
@@ -300,7 +285,7 @@ fn compute_normal(vox_pos: vec3<f32>, vox_size: f32) -> vec3<f32> {
     }
 }
 
-fn check_for_voxel(pos: vec3<f32>) -> bool {
+fn check_for_voxel(pos: vec3<f32>) -> f32 {
     var root = octree.root;
     var width = octree.width;
     var node = leaves[0];
@@ -317,9 +302,9 @@ fn check_for_voxel(pos: vec3<f32>) -> bool {
         exit += 1u;
     }
     if node.voxel.id != 0u {
-        return true;
+        return 1.0;
     } else {
-        return false;
+        return 0.0;
     }
 }
 

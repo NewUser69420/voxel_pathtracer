@@ -3,7 +3,8 @@ const EPSILON: f32 = 1e-6;
 const MAXSTEP: u32 = 100;
 const SHADOWSOFTNESS: f32 = 1.3;
 const LIGHTDIFFUSION: f32 = 30.0;
-const REFLECTIVENESS: f32 = 512.0;
+const REFLECTIVENESS: f32 = 128.0;
+const AMBIENTBRIGHTNESS: f32 = 0.5;
 
 struct Octree {
     root: array<f32, 3>,
@@ -148,13 +149,13 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
             var light_color = vec3<f32>(0.0, 0.0, 0.0);
             var intensity = 0.0;
 
+            let rndm0 = rand(vec2<f32>(photon.x, photon.y));
+            let rndm1 = rand(vec2<f32>(photon.y, photon.x));
+            let rndm2 = (rndm0) - (rndm1);
+            let photon = photon + vec3<f32>(rndm2 * SHADOWSOFTNESS, rndm2 * SHADOWSOFTNESS, rndm2 * SHADOWSOFTNESS);
+
             for (var i = 0u; i < emitter_num; i++) {
                 let light = emitters[i];
-
-                let rndm0 = rand(vec2<f32>(photon.x + light.strength, photon.y - light.strength));
-                let rndm1 = rand(vec2<f32>(photon.y + light.strength, photon.x - light.strength));
-                let rndm2 = (rndm0) - (rndm1);
-                let photon = photon + vec3<f32>(rndm2 * SHADOWSOFTNESS, rndm2 * SHADOWSOFTNESS, rndm2 * SHADOWSOFTNESS);
 
                 let dist_to_light = distance(photon, light.position);
 
@@ -179,6 +180,20 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
                     }                                                        
                 }                                
             }
+
+            //reflectiveness
+            let normal = compute_normal(photon, width / 2.0);
+            var ray = AabbRay(at_length(AabbRay(photon, normal, vec3<f32>()), 1.0), normal, vec3<f32>());
+            ray.inv_direction = vec3<f32>(1.0/ray.direction.x, 1.0/ray.direction.y, 1.0/ray.direction.z);
+
+            let result = cast_ray(ray, REFLECTIVENESS);
+            let range_mod = map_range(
+            0.0, REFLECTIVENESS,
+            0.0, 1.0,
+            result.dist + (rndm2 * LIGHTDIFFUSION / 10),
+            );
+            let light_mod = (1.0 - range_mod) * AMBIENTBRIGHTNESS;
+            light_color = max(light_color, result.color * light_mod);   
 
             color *= light_color;
 
@@ -252,6 +267,56 @@ fn ray_box_intersect(r: AabbRay, b: Aabb) -> vec2<f32> {
     
     tmin = max(tmin, 0.0);
     return vec2<f32>(tmin, tmax);
+}
+
+fn compute_normal(vox_pos: vec3<f32>, vox_size: f32) -> vec3<f32> {
+    var normal = vec3<f32>();
+
+    let offset_x = vec3<f32>(1.0, 0.0, 0.0);
+    let offset_y = vec3<f32>(0.0, 1.0, 0.0);
+    let offset_z = vec3<f32>(0.0, 0.0, 1.0);
+
+    let voxel_xp = f32(check_for_voxel(vox_pos + offset_x));
+    let voxel_xm = f32(check_for_voxel(vox_pos - offset_x));
+    let voxel_yp = f32(check_for_voxel(vox_pos + offset_y));
+    let voxel_ym = f32(check_for_voxel(vox_pos - offset_y));
+    let voxel_zp = f32(check_for_voxel(vox_pos + offset_z));
+    let voxel_zm = f32(check_for_voxel(vox_pos - offset_z));
+
+    normal.x = -voxel_xp + voxel_xm;
+    normal.y = -voxel_yp + voxel_ym;
+    normal.z = -voxel_zp + voxel_zm;
+
+    // normal = rotate_at_y(normal, 90_f32.to_radians());
+
+    if length(normal) > 0.0 {
+        return normalize(normal);
+    } else {
+        return vec3<f32>();
+    }
+}
+
+fn check_for_voxel(pos: vec3<f32>) -> bool {
+    var root = octree.root;
+    var width = octree.width;
+    var node = leaves[0];
+    var next_index = 0u;
+    var exit = 0u;
+    while next_index != U32MAX && exit < 100 {
+        let i = get_leaf(root, pos);
+        node = leaves[next_index];
+        next_index = node.children[i];
+        if next_index != U32MAX {
+            root = get_new_root(i, root, width);
+            width = width / 2.0;
+        }
+        exit += 1u;
+    }
+    if node.voxel.id != 0u {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 fn at_length(ray: AabbRay, length: f32) -> vec3<f32> {

@@ -1,5 +1,4 @@
 use crate::{
-    light_controller::VoxelLightEmitter,
     octree::{Octree, ShaderOctree},
     pre_compute::{RESHIGHT, RESWIDTH},
     world_generator::VIEWDIST,
@@ -14,7 +13,7 @@ use bevy::{
     },
     log::info,
     math::Vec3,
-    prelude::{IntoSystemConfigs, Transform},
+    prelude::IntoSystemConfigs,
     render::{
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_asset::RenderAssets,
@@ -47,8 +46,6 @@ pub struct RayTracerBuffers {
     leaves: Buffer,
     screen: Buffer,
     view_distance: Buffer,
-    emitters: Buffer,
-    emitter_num: Buffer,
 }
 
 #[derive(Resource)]
@@ -72,35 +69,6 @@ pub struct ShaderScreen {
     pub fov: u32,
 }
 
-#[derive(Default, Clone, ShaderType)]
-pub struct ShaderEmitter {
-    pub position: Vec3,
-    pub rotation: Vec3,
-    pub radius: f32,
-    pub strength: f32,
-    pub range: f32,
-    pub falloff: f32,
-    pub fov: u32,
-    pub color: Vec3,
-}
-impl ShaderEmitter {
-    fn from_vl_emitter(value: VoxelLightEmitter, position: Vec3, rotation: Vec3) -> Self {
-        ShaderEmitter {
-            position: position,
-            rotation: rotation,
-            radius: value.radius,
-            strength: value.strenght,
-            range: value.range as f32,
-            falloff: value.falloff,
-            fov: value.fov,
-            color: value.color,
-        }
-    }
-}
-
-#[derive(Resource, Default, Clone)]
-pub struct Emitters(pub Vec<ShaderEmitter>);
-
 #[derive(Resource, ExtractResource, Clone, Default)]
 pub struct RayTracerTexture {
     pub texture: Handle<Image>,
@@ -119,7 +87,6 @@ impl Plugin for RayTracerPlugin {
             .init_resource::<LeafBufferData>()
             .init_resource::<SerialiseTrigger>()
             .init_resource::<ShaderScreen>()
-            .init_resource::<Emitters>()
             .add_systems(ExtractSchedule, extract_resources)
             .add_systems(
                 Render,
@@ -146,17 +113,14 @@ impl Plugin for RayTracerPlugin {
                 leaves: setup_leaves_buffer(render_device.clone()),
                 screen: setup_screen_buffer(render_device.clone()),
                 view_distance: setup_view_distance_buffer(render_device.clone()),
-                emitters: setup_emitters_buffer(render_device.clone()),
-                emitter_num: setup_emitter_num_buffer(render_device.clone()),
             });
     }
 }
 
 fn extract_resources(
-    mut world: ResMut<MainWorld>,
+    world: ResMut<MainWorld>,
     mut octree: ResMut<ComputeOctree>,
     mut screen: ResMut<ShaderScreen>,
-    mut emitters: ResMut<Emitters>,
 ) {
     let now = Instant::now();
 
@@ -176,18 +140,6 @@ fn extract_resources(
     screen.width = o_screen.width;
     screen.fov = o_screen.fov;
 
-    emitters.0 = world
-        .query::<(&VoxelLightEmitter, &Transform)>()
-        .iter(&mut world)
-        .map(|v| {
-            ShaderEmitter::from_vl_emitter(
-                v.0.clone(),
-                v.1.translation,
-                v.1.rotation.to_euler(bevy::math::EulerRot::XYZ).into(),
-            )
-        })
-        .collect();
-
     let elapsed = now.elapsed().as_millis();
     if elapsed > 2 {
         info!("extracting resources took: {}", elapsed)
@@ -199,7 +151,6 @@ fn update_buffers(
     octree: Res<ComputeOctree>,
     leaf_data: Res<LeafBufferData>,
     screen: Res<ShaderScreen>,
-    emitters: Res<Emitters>,
     render_queue: Res<RenderQueue>,
     trigger: Res<SerialiseTrigger>,
 ) {
@@ -235,20 +186,8 @@ fn update_buffers(
 
     update_screen_buffer(render_queue.clone(), &raytracer_buffer.screen, *screen);
 
-    update_emitters_buffer(
-        render_queue.clone(),
-        &raytracer_buffer.emitters,
-        emitters.0.clone(),
-    );
-
-    update_emitter_num_buffer(
-        render_queue.clone(),
-        &raytracer_buffer.emitter_num,
-        emitters.0.len(),
-    );
-
     let elapsed = now.elapsed().as_millis();
-    if elapsed > 5 {
+    if elapsed > 20 {
         info!("updating buffers took: {}", elapsed);
     }
 }
@@ -275,9 +214,7 @@ fn prepare_bind_group(
                     (1, raytracer_buffer.leaves.as_entire_buffer_binding()),
                     (2, raytracer_buffer.screen.as_entire_buffer_binding()),
                     (3, raytracer_buffer.view_distance.as_entire_buffer_binding()),
-                    (4, raytracer_buffer.emitters.as_entire_buffer_binding()),
-                    (5, raytracer_buffer.emitter_num.as_entire_buffer_binding()),
-                    (6, BindingResource::TextureView(&gpu_view.texture_view)),
+                    (4, BindingResource::TextureView(&gpu_view.texture_view)),
                 )),
             );
             commands.insert_resource(RayTracerBufferBindGroup(bind_group));
@@ -348,26 +285,6 @@ impl FromWorld for RayTracePipeLine {
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::ReadWrite,
                         format: wgpu::TextureFormat::Rgba8Unorm,
@@ -379,7 +296,7 @@ impl FromWorld for RayTracePipeLine {
         );
         let shader = world
             .resource::<AssetServer>()
-            .load("shaders/raymarcher(traced_light).wgsl");
+            .load("shaders/pathtracer.wgsl");
         let pipeline_cache = world.resource::<PipelineCache>();
         let update_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
@@ -570,46 +487,4 @@ fn setup_view_distance_buffer(render_device: RenderDevice) -> Buffer {
         contents: buffer.into_inner(),
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
     })
-}
-
-fn setup_emitters_buffer(render_device: RenderDevice) -> Buffer {
-    render_device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 2147483648,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    })
-}
-
-fn update_emitters_buffer(
-    render_queue: RenderQueue,
-    buffer: &Buffer,
-    emitters: Vec<ShaderEmitter>,
-) {
-    let mut byte_buffer = Vec::new();
-    let mut temp_buffer = StorageBuffer::new(&mut byte_buffer);
-    temp_buffer.write(&emitters).unwrap();
-    render_queue.write_buffer(buffer, 0, temp_buffer.into_inner());
-}
-
-fn setup_emitter_num_buffer(render_device: RenderDevice) -> Buffer {
-    let mut byte_buffer = Vec::new();
-    let mut buffer = StorageBuffer::new(&mut byte_buffer);
-    buffer.write(&0_u32).unwrap();
-    render_device.create_buffer_with_data(&wgpu::util::BufferInitDescriptor {
-        label: None,
-        contents: buffer.into_inner(),
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST,
-    })
-}
-
-fn update_emitter_num_buffer(render_queue: RenderQueue, buffer: &Buffer, num: usize) {
-    let mut byte_buffer = Vec::new();
-    let mut temp_buffer = StorageBuffer::new(&mut byte_buffer);
-    temp_buffer.write(&(num as u32)).unwrap();
-    render_queue.write_buffer(buffer, 0, temp_buffer.into_inner());
 }

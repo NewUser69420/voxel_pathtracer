@@ -7,7 +7,6 @@ use bevy::{
 
 use crate::{
     compute::RayTracerTexture,
-    light_controller::VoxelLightEmitter,
     pre_compute::{FOV, RESHIGHT, RESWIDTH},
     world_generator::VoxWorld,
 };
@@ -53,15 +52,6 @@ pub fn spawn_player(
             vox_world.root[1] as f32,
             vox_world.root[2] as f32 + 32.0,
         )),
-        VoxelLightEmitter {
-            radius: 1.0,
-            strenght: 0.9,
-            range: 120,
-            falloff: 0.8,
-            fov: 0,
-            color: Vec3::new(1.0, 0.9, 0.8),
-        },
-        // VariableLight((0.5, 0.9, 0.7)),
         Player,
     );
     let tracer_cam = (
