@@ -6,8 +6,10 @@ const MAXSTEP: u32 = 100;
 const SKYDIST: f32 = 512.0;
 const SAMPLECOUNT: u32 = 4u;
 
-const SKYCOLOR: vec3<f32> = vec3<f32>(0.9, 0.9, 1.0);
-const AMBIENTCOLOR: vec3<f32> = vec3<f32>(0.2, 0.2, 0.2);
+const SKYCOLOR: vec3<f32> = vec3<f32>(0.85, 0.85, 0.9);
+const AMBIENTCOLOR: vec3<f32> = vec3<f32>(0.1, 0.1, 0.1);
+
+const SUN: vec3<f32> = vec3<f32>(512.0, 2048.0, 512.0);
 
 struct Octree {
     root: array<f32, 3>,
@@ -20,10 +22,11 @@ struct Leaf {
 }
 
 struct OctreeVoxel {
-    id: u32,
     color: vec3<f32>,
     emission: f32,
+    light_color: vec3<f32>,
     lit: u32,
+    id: u32,
 }
 
 struct ShaderScreen {
@@ -125,6 +128,7 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
         var width = octree.width;
         var node = leaves[0];
         var next_index = 0u;
+        var last_index = next_index;
         var exit = 0u;
         while next_index != U32MAX && exit < MAXSTEP {
             let i = get_leaf(root, photon);
@@ -133,58 +137,67 @@ fn get_pixel_color(r: AabbRay) -> vec4<f32> {
             if next_index != U32MAX {
                 root = get_new_root(i, root, width);
                 width = width / 2.0;
+                last_index = next_index;
             }
             exit += 1u;
         }
 
         if node.voxel.id != 0 {
-            var color = node.voxel.color;
-            
-            //setup values
-            var light_color = vec3<f32>();
-            let r1 = rand(vec2<f32>(photon.x, photon.y));
-            let r2 = rand(vec2<f32>(photon.y, photon.x));
-            let r3 = (r1) - (r2);
-            let normal = compute_normal(photon, width / 2.0);
-            let cs = create_coordinate_system(normal);
+            if node.voxel.lit == 0 {
+                //indirect lighting
+                let photon = trunc(photon);
+                var indir_light_color = vec3<f32>();
+                var dir_light_color = vec3<f32>();
+                let r1 = rand(vec2<f32>(photon.x, photon.y));
+                let r2 = rand(vec2<f32>(photon.y, photon.x));
+                let normal = compute_normal(photon, width / 2.0);
+                let cs = create_coordinate_system(normal);
+                for (var i = 0u; i < SAMPLECOUNT; i++) {
+                    let r_sample = uniformSampleHemisphere(r1, r2);
+                    let world_sample = vec3<f32>(
+                        r_sample.x * cs[2].x + r_sample.y * normal.x + r_sample.z * cs[0].x,
+                        r_sample.x * cs[2].y + r_sample.y * normal.y + r_sample.z * cs[0].y,
+                        r_sample.x * cs[2].z + r_sample.y * normal.z + r_sample.z * cs[0].z,
+                    );
+                    //cast ray
+                    var ray = AabbRay(at_length(AabbRay(photon, world_sample, vec3<f32>()), 1.0), world_sample, vec3<f32>());
+                    ray.inv_direction = vec3<f32>(1.0/ray.direction.x, 1.0/ray.direction.y, 1.0/ray.direction.z);
+                    let result = cast_ray(ray, SKYDIST);
+                    let range_mod = map_range(
+                    0.0, SKYDIST,
+                    0.0, 1.0,
+                    result.dist,
+                    );
+                    if result.dist < SKYDIST - (SKYDIST * 0.1) {
+                        //hits something so ambient colour or emmisive colour
+                        if result.emission == 0.0 {
+                            indir_light_color += AMBIENTCOLOR * range_mod;
+                        } else {
+                            indir_light_color += result.color * map_range(0.0, 1.0, 0.0, 5.0, result.emission) * (1 - range_mod);
+                        }
+                    } else {
+                        //did not hit something, so sky colour
+                        indir_light_color += SKYCOLOR;
+                    }
+                }
+                for (var i = 0; i < 3; i++ ) {
+                    indir_light_color[i] /= f32(SAMPLECOUNT);
+                }
+                
 
-            for (var i = 0u; i < SAMPLECOUNT; i++) {
-                let r_sample = uniformSampleHemisphere(r1, r2);
-                let world_sample = vec3<f32>(
-                    r_sample.x * cs[2].x + r_sample.y * normal.x + r_sample.z * cs[0].x,
-                    r_sample.x * cs[2].y + r_sample.y * normal.y + r_sample.z * cs[0].y,
-                    r_sample.x * cs[2].z + r_sample.y * normal.z + r_sample.z * cs[0].z
-                );
-
-                //cast ray
-                var ray = AabbRay(at_length(AabbRay(photon, world_sample, vec3<f32>()), 1.0), world_sample, vec3<f32>());
+                //direct lighting
+                var ray = AabbRay(at_length(AabbRay(photon, SUN, vec3<f32>()), 1.0), SUN, vec3<f32>());
                 ray.inv_direction = vec3<f32>(1.0/ray.direction.x, 1.0/ray.direction.y, 1.0/ray.direction.z);
                 let result = cast_ray(ray, SKYDIST);
-                
-                let range_mod = map_range(
-                0.0, SKYDIST,
-                0.0, 1.0,
-                result.dist,
-                );
-
-                if result.dist < SKYDIST - (SKYDIST * 0.1) {
-                    //hits something so ambient colour or emmisive colour
-                    if result.emission == 0.0 {
-                        light_color += AMBIENTCOLOR * range_mod;
-                    } else {
-                        light_color += result.color * map_range(0.0, 1.0, 0.0, 5.0, result.emission) * (1 - range_mod);
-                    }
-                } else {
-                    //did not hit something, so light colour
-                    light_color += SKYCOLOR;
+                if result.dist > SKYDIST - (SKYDIST * 0.1) {
+                    dir_light_color = SKYCOLOR;
                 }
-            }
-            for (var i = 0; i < 3; i++ ) {
-                light_color[i] /= f32(SAMPLECOUNT);
-            }
 
-            color *= light_color;
-
+                leaves[last_index].voxel.lit = 1u;
+                leaves[last_index].voxel.light_color = indir_light_color + dir_light_color;
+            }
+            
+            let color = leaves[last_index].voxel.color * leaves[last_index].voxel.light_color;
             return vec4<f32>(color[0], color[1], color[2], 1.0);
         }
 

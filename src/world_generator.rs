@@ -55,14 +55,15 @@ pub struct StorageVoxel {
 impl StorageVoxel {
     pub fn into_normal(self: &Self) -> OctreeVoxel {
         OctreeVoxel {
-            id: self.id as u32,
             color: Vec3::new(
                 self.color[0] as f32 / 100.0,
                 self.color[1] as f32 / 100.0,
                 self.color[2] as f32 / 100.0,
             ),
             emission: self.emission,
+            light_color: Vec3::ZERO,
             lit: 0,
+            id: self.id as u32,
         }
     }
 }
@@ -131,7 +132,7 @@ pub fn build_world(channel: Res<Channel>, vox_world: Res<VoxWorld>) {
         let mut world = WorldData::default();
 
         //spawn 1
-        let vox_data = load("Assets/vox_files/emission_test.vox").unwrap();
+        let vox_data = load("Assets/vox_files/castle.vox").unwrap();
         let materials = vox_data.materials;
         let palette = vox_data.palette;
         process_scene_node(

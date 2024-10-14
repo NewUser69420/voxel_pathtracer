@@ -39,18 +39,20 @@ impl Leaf {
 
 #[derive(Default, Clone, Copy, ShaderType, Debug)]
 pub struct OctreeVoxel {
-    pub id: u32,
     pub color: Vec3,
     pub emission: f32,
+    pub light_color: Vec3,
     pub lit: u32,
+    pub id: u32,
 }
 impl OctreeVoxel {
     pub fn empty() -> Self {
         OctreeVoxel {
-            id: 0,
             color: Vec3::ZERO,
             emission: 0.0,
+            light_color: Vec3::ZERO,
             lit: 0,
+            id: 0,
         }
     }
 }

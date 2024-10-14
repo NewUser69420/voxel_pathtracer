@@ -13,7 +13,7 @@ use bevy::{
     },
     log::info,
     math::Vec3,
-    prelude::IntoSystemConfigs,
+    prelude::{Event, EventReader, EventWriter, IntoSystemConfigs},
     render::{
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_asset::RenderAssets,
@@ -77,6 +77,9 @@ pub struct RayTracerTexture {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 struct RayTraceLabel;
 
+#[derive(Event)]
+struct UpdatesOctreeBuffer;
+
 pub struct RayTracerPlugin;
 impl Plugin for RayTracerPlugin {
     fn build(&self, app: &mut App) {
@@ -87,6 +90,7 @@ impl Plugin for RayTracerPlugin {
             .init_resource::<LeafBufferData>()
             .init_resource::<SerialiseTrigger>()
             .init_resource::<ShaderScreen>()
+            .add_event::<UpdatesOctreeBuffer>()
             .add_systems(ExtractSchedule, extract_resources)
             .add_systems(
                 Render,
@@ -121,6 +125,7 @@ fn extract_resources(
     world: ResMut<MainWorld>,
     mut octree: ResMut<ComputeOctree>,
     mut screen: ResMut<ShaderScreen>,
+    mut event_writer: EventWriter<UpdatesOctreeBuffer>,
 ) {
     let now = Instant::now();
 
@@ -128,6 +133,7 @@ fn extract_resources(
         Ok(mut lock) => {
             if lock.is_some() {
                 octree.0 = Arc::new(Mutex::new(lock.take()));
+                event_writer.send(UpdatesOctreeBuffer);
             }
         }
         Err(_) => {}
@@ -153,33 +159,41 @@ fn update_buffers(
     screen: Res<ShaderScreen>,
     render_queue: Res<RenderQueue>,
     trigger: Res<SerialiseTrigger>,
+    mut event_reader: EventReader<UpdatesOctreeBuffer>,
 ) {
     let now = Instant::now();
 
     match octree.0.try_lock() {
         Ok(lock) => {
-            let oct_clone = Arc::clone(&octree.0);
-            let leaf_clone = Arc::clone(&leaf_data.0);
-            let trig_clone = Arc::clone(&trigger.0);
-            if !*trigger.0.lock().unwrap() {
-                *trigger.0.lock().unwrap() = true;
-                thread::spawn(move || {
-                    serialise_leaf_data(oct_clone, leaf_clone);
-                    *trig_clone.lock().unwrap() = false;
-                });
-            }
-            if lock.is_some() {
-                update_octree_buffer(
+            if !event_reader.is_empty() {
+                let oct_clone = Arc::clone(&octree.0);
+                let leaf_clone = Arc::clone(&leaf_data.0);
+                let trig_clone = Arc::clone(&trigger.0);
+                if !*trigger.0.lock().unwrap() {
+                    *trigger.0.lock().unwrap() = true;
+                    thread::spawn(move || {
+                        serialise_leaf_data(oct_clone, leaf_clone);
+                        *trig_clone.lock().unwrap() = false;
+                    });
+                }
+                if lock.is_some() {
+                    update_octree_buffer(
+                        render_queue.clone(),
+                        &raytracer_buffer.octree,
+                        &ShaderOctree::new(
+                            lock.as_ref().unwrap().width,
+                            lock.as_ref().unwrap().root,
+                        ),
+                    );
+                }
+                update_leaves_buffer(
                     render_queue.clone(),
-                    &raytracer_buffer.octree,
-                    &ShaderOctree::new(lock.as_ref().unwrap().width, lock.as_ref().unwrap().root),
+                    &raytracer_buffer.leaves,
+                    Arc::clone(&leaf_data.0),
                 );
+
+                event_reader.clear();
             }
-            update_leaves_buffer(
-                render_queue.clone(),
-                &raytracer_buffer.leaves,
-                Arc::clone(&leaf_data.0),
-            );
         }
         Err(_) => {}
     }

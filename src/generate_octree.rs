@@ -31,8 +31,18 @@ pub fn setup(mut commands: Commands) {
     commands.insert_resource(Trigger(lock));
 }
 
-pub fn run_octree(mut event_writer: EventWriter<GenerateOctreeEvent>) {
+pub fn run_octree(
+    mut event_writer: EventWriter<GenerateOctreeEvent>,
+    // time: Res<Time>,
+    // mut timer: Local<f32>,
+) {
     event_writer.send(GenerateOctreeEvent);
+    // if *timer > 0.5 {
+    //     event_writer.send(GenerateOctreeEvent);
+    //     *timer = 0.0;
+    // } else {
+    //     *timer += time.delta_seconds();
+    // }
 }
 
 pub fn create_octree(
